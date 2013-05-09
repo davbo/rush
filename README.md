@@ -1,6 +1,9 @@
 rush
-----
+====
 
-Unix shell implemented in Rust, using BSD EditLine.
+POSIX shell implemented in [Rust](http://www.rust-lang.org), requires davbo/rust-linenoise for doing the terminal stuff.
 
-Hopefully...
+"Working" Features
+------------------
+
+ - Pipes
