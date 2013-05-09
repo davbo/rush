@@ -41,8 +41,21 @@ mod rush {
             exec_command(stdin, *command)
         });
         os::close(pipe_in.out);
+
         do task::spawn_sched(task::SingleThreaded) || {
-            io::print(core::run::readclose(std_out));
+            unsafe {
+                let file = os::fdopen(std_out);
+                let reader = io::FILE_reader(file, false);
+                let buf = io::with_bytes_writer(|writer| {
+                    let mut bytes = [0, ..4096];
+                    while !reader.eof() {
+                        let nread = reader.read(bytes, bytes.len());
+                        writer.write(bytes.slice(0, nread));
+                        io::print(str::from_bytes(bytes.slice(0, nread)))
+                    }
+                });
+                os::fclose(file);
+            }
         }
     }
 
