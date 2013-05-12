@@ -1,11 +1,15 @@
 extern mod linenoise;
 
 mod rush {
-    extern mod linenoise;
     extern mod core;
     use core::run;
 
-    pub fn exec_command(stdin_fd: libc::c_int, command: &str) -> libc::c_int {
+    pub struct JobOutput {
+        stdout: libc::c_int,
+        stderr: libc::c_int,
+    }
+
+    pub fn exec_command(input: JobOutput, command: &str) -> JobOutput {
         let pipe_out = os::pipe();
         let pipe_err = os::pipe();
         let mut args: ~[~str] = ~[];
@@ -22,38 +26,43 @@ mod rush {
         });
         let pid = run::spawn_process(
                 prog, args, &None, &None,
-                stdin_fd, pipe_out.out, pipe_err.out);
+                input.stdout, pipe_out.out, pipe_err.out);
         os::close(pipe_out.out);
         os::close(pipe_err.out);
         do task::spawn_sched(task::SingleThreaded) || {
             run::waitpid(pid);
         }
-        pipe_out.in
+        JobOutput{
+            stdout: pipe_out.in,
+            stderr: pipe_err.in,
+        }
     }
 
     pub fn handle_input(line: &str) {
-        linenoise::history_add(line);
-        linenoise::history_save("history.txt");
         let mut commands: ~[&str] = ~[];
         str::each_split_char_no_trailing(line, '|', |command| { commands.push(str::trim(command)); true });
-        let pipe_in = os::pipe();
-        let std_out = vec::foldl(pipe_in.in, commands, |stdin, command| {
+        let fake_out = JobOutput{
+            stdout: -1,
+            stderr: -1,
+        };
+        let job_output = vec::foldl(fake_out, commands, |stdin, command| {
             exec_command(stdin, *command)
         });
-        os::close(pipe_in.out);
-
+        proxy_fds(job_output.stdout, libc::STDOUT_FILENO as libc::c_int);
+        proxy_fds(job_output.stderr, libc::STDERR_FILENO as libc::c_int);
+    }
+    pub fn proxy_fds(input: libc::c_int, output: libc::c_int) {
+        if (input == -1) { return }
         do task::spawn_sched(task::SingleThreaded) || {
             unsafe {
-                let file = os::fdopen(std_out);
+                let output = io::fd_writer(output, false);
+                let file = os::fdopen(input);
                 let reader = io::FILE_reader(file, false);
-                let buf = io::with_bytes_writer(|writer| {
-                    let mut bytes = [0, ..4096];
-                    while !reader.eof() {
-                        let nread = reader.read(bytes, bytes.len());
-                        writer.write(bytes.slice(0, nread));
-                        io::print(str::from_bytes(bytes.slice(0, nread)))
-                    }
-                });
+                let mut bytes = [0, ..4096];
+                while !reader.eof() {
+                    let nread = reader.read(bytes, bytes.len());
+                    output.write(bytes.slice(0, nread));
+                }
                 os::fclose(file);
             }
         }
@@ -66,5 +75,7 @@ fn main() {
     loop {
         let line = linenoise::init("rush: ");
         rush::handle_input(line);
+        linenoise::history_add(line);
+        linenoise::history_save("history.txt");
     }
 }
