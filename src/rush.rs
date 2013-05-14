@@ -1,12 +1,12 @@
-extern mod linenoise;
-
 mod rush {
     extern mod core;
+    extern mod linenoise;
     use core::run;
 
     pub struct JobOutput {
         stdout: libc::c_int,
         stderr: libc::c_int,
+        pid: libc::c_int,
     }
 
     pub fn exec_command(input: JobOutput, command: &str) -> JobOutput {
@@ -27,12 +27,11 @@ mod rush {
         let pid = run::spawn_process(
                 prog, args, &None, &None,
                 input.stdout, pipe_out.out, pipe_err.out);
+        os::close(input.stdout);
         os::close(pipe_out.out);
         os::close(pipe_err.out);
-        do task::spawn_sched(task::SingleThreaded) || {
-            run::waitpid(pid);
-        }
         JobOutput{
+            pid: pid,
             stdout: pipe_out.in,
             stderr: pipe_err.in,
         }
@@ -44,15 +43,17 @@ mod rush {
         let fake_out = JobOutput{
             stdout: -1,
             stderr: -1,
+            pid: -1,
         };
         let job_output = vec::foldl(fake_out, commands, |stdin, command| {
             exec_command(stdin, *command)
         });
+        if (job_output.pid == -1) { return }
         proxy_fds(job_output.stdout, libc::STDOUT_FILENO as libc::c_int);
         proxy_fds(job_output.stderr, libc::STDERR_FILENO as libc::c_int);
+        run::waitpid(job_output.pid);
     }
     pub fn proxy_fds(input: libc::c_int, output: libc::c_int) {
-        if (input == -1) { return }
         do task::spawn_sched(task::SingleThreaded) || {
             unsafe {
                 let output = io::fd_writer(output, false);
@@ -67,15 +68,16 @@ mod rush {
             }
         }
     }
-
-}
-
-fn main() {
-    linenoise::set_multiline(true);
-    loop {
+    pub fn main() {
+        linenoise::set_multiline(true);
+        loop {
+            prompt();
+        }
+    }
+    pub fn prompt() {
         let line = linenoise::init("rush: ");
-        rush::handle_input(line);
         linenoise::history_add(line);
         linenoise::history_save("history.txt");
+        handle_input(line);
     }
 }
