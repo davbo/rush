@@ -3,77 +3,91 @@ mod rush {
     extern mod linenoise;
     use core::run;
 
-    pub struct JobOutput {
-        stdout: libc::c_int,
-        stderr: libc::c_int,
-        pid: libc::c_int,
+    pub struct Job {
+        command: ~str,
+        stdin: os::Pipe,
+        stdout: os::Pipe,
+        stderr: os::Pipe,
     }
 
-    pub fn exec_command(input: JobOutput, command: &str) -> JobOutput {
-        let pipe_out = os::pipe();
-        let pipe_err = os::pipe();
-        let mut args: ~[~str] = ~[];
-        let mut prog = ~"";
-        let mut first = true;
-        str::each_split_char(command, ' ', |item| {
-            if (first) {
-                prog = copy item.to_owned();
-                first = false;
-            } else {
-                args.push(item.to_owned());
+    impl Job {
+        pub fn exec(&self) -> i32 {
+            let mut args: ~[~str] = ~[];
+            let mut prog = ~"";
+            let mut first = true;
+            str::each_split_char(self.command, ' ', |item| {
+                if (first) {
+                    prog = copy item.to_owned();
+                    first = false;
+                } else {
+                    args.push(item.to_owned());
+                }
+                true
+            });
+            let pid = run::spawn_process(
+                    prog, args, &None, &None,
+                    self.stdin.in, self.stdout.out, self.stderr.out);
+            os::close(self.stdin.in);
+            if (self.stdout.out != libc::STDOUT_FILENO as libc::c_int) {
+                os::close(self.stdout.out);
+                os::close(self.stderr.out);
             }
-            true
-        });
-        let pid = run::spawn_process(
-                prog, args, &None, &None,
-                input.stdout, pipe_out.out, pipe_err.out);
-        os::close(input.stdout);
-        os::close(pipe_out.out);
-        os::close(pipe_err.out);
-        JobOutput{
-            pid: pid,
-            stdout: pipe_out.in,
-            stderr: pipe_err.in,
+            pid
         }
     }
 
     pub fn handle_input(line: &str) {
-        let mut commands: ~[&str] = ~[];
-        str::each_split_char_no_trailing(line, '|', |command| { commands.push(str::trim(command)); true });
-        let fake_out = JobOutput{
-            stdout: -1,
-            stderr: -1,
-            pid: -1,
-        };
-        let job_output = vec::foldl(fake_out, commands, |stdin, command| {
-            exec_command(stdin, *command)
+        if (line.is_empty()) { return; }
+        let mut commands: ~[~str] = ~[];
+        str::each_split_char_no_trailing(line, '|', |command| {
+            commands.push(command.to_owned());
+            true
         });
-        if (job_output.pid == -1) { return }
-        proxy_fds(job_output.stdout, libc::STDOUT_FILENO as libc::c_int);
-        proxy_fds(job_output.stderr, libc::STDERR_FILENO as libc::c_int);
-        run::waitpid(job_output.pid);
-    }
-    pub fn proxy_fds(input: libc::c_int, output: libc::c_int) {
-        do task::spawn_sched(task::SingleThreaded) || {
-            unsafe {
-                let output = io::fd_writer(output, false);
-                let file = os::fdopen(input);
-                let reader = io::FILE_reader(file, false);
-                let mut bytes = [0, ..4096];
-                while !reader.eof() {
-                    let nread = reader.read(bytes, bytes.len());
-                    output.write(bytes.slice(0, nread));
-                }
-                os::fclose(file);
+        let mut pipeline: ~[Job] = ~[];
+        let mut index = 0;
+        let mut stdin = os::Pipe{ in: -1, out: -1};
+        commands.each(|command| {
+            index += 1;
+            // Needs to be initialized like this?
+            // Surely I'm missing a nicer syntax for this?
+            let mut stdout = os::Pipe{ in: -1, out: -1};
+            let mut stderr = os::Pipe{ in: -1, out: -1};
+            if (index==commands.len()) {
+                // Pass the last job the stdout/stderr for the shell itself
+                stdout = os::Pipe{
+                    out: libc::STDOUT_FILENO as libc::c_int,
+                    in: -1,
+                };
+                stderr = os::Pipe{
+                    out: libc::STDERR_FILENO as libc::c_int,
+                    in: -1,
+                };
+            } else {
+                stdout = os::pipe();
+                stderr = os::pipe();
             }
-        }
+            pipeline.push(Job{
+                command: str::trim(*command).to_owned(),
+                stdin: stdin,
+                stdout: stdout,
+                stderr: stderr,
+            });
+            stdin = stdout;
+            true
+        });
+
+        let mut pid = -1;
+        pipeline.each(|job| { pid = job.exec(); true });
+        os::waitpid(pid);
     }
+
     pub fn main() {
         linenoise::set_multiline(true);
         loop {
             prompt();
         }
     }
+
     pub fn prompt() {
         let line = linenoise::init("rush: ");
         linenoise::history_add(line);
