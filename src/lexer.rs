@@ -1,11 +1,11 @@
 mod lexer {
-    extern mod core;
+    use std::io;
+    use std::to_str;
+    use std::char;
 
 
     enum TokenType {
         COMMAND,
-        ARGUMENT,
-        EXIT,
         PIPE,
         SEMICOLON,
         EOF,
@@ -33,10 +33,10 @@ mod lexer {
 
         pub fn consume(&mut self) {
             self.index += 1;
-            if (self.index >= str::len(self.input)) {
+            if (self.index >= self.input.len()) {
                 self.eof = true;
             } else {
-                self.currentChar = str::char_at(self.input, self.index);
+                self.currentChar = self.input.char_at(self.index);
             }
         }
 
@@ -51,7 +51,7 @@ mod lexer {
             while (char::is_alphanumeric(self.currentChar) && !self.eof) {
                 self.consume();
             }
-            Token {text: str::slice(self.input, start, self.index).to_owned(), ttype: COMMAND}
+            Token {text: self.input.slice(start, self.index).to_owned(), ttype: COMMAND}
         }
 
         pub fn next_token(&mut self) -> Token {
@@ -78,6 +78,7 @@ mod lexer {
         }
 
     }
+    #[main]
     pub fn main() {
         let mut lex = Lexer { input: ~"te;st st2ring|", index: 0, currentChar: 't', eof: false };
         let mut t = lex.next_token();
