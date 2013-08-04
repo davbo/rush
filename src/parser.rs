@@ -1,4 +1,4 @@
-use lexer::{Token, TokenType, Lexer, COMMAND, SEMICOLON, EOF};
+use lexer::{Token, TokenType, Lexer, COMMAND, SEMICOLON, PIPE, EOF};
 use std::libc::exit;
 
 pub struct Parser {
@@ -15,7 +15,7 @@ impl Parser {
     }
 
     pub fn LT(&mut self, i: uint) -> Token {
-        let token = copy self.lookahead[(self.index + i - 1) % self.k];
+        let token = copy self.lookahead[(self.index + i) % self.k];
         token
     }
 
@@ -42,10 +42,18 @@ impl Parser {
     }
 
     pub fn commands(&mut self) {
-        self.command();
-        while (self.LA(0) as int == SEMICOLON as int) {
-            self.tmatch(SEMICOLON);
+        loop {
             self.command();
+            if (self.LA(0) as int == PIPE as int) {
+                self.tmatch(PIPE);
+                self.command();
+            }
+            if (self.LA(0) as int == SEMICOLON as int) {
+                self.tmatch(SEMICOLON);
+            }
+            if (self.LA(0) as int == EOF as int) {
+                break;
+            }
         }
     }
 
@@ -56,8 +64,8 @@ impl Parser {
 
 #[main]
 pub fn main() {
-    let mut lex = Lexer { input: ~"foo; bar; baz", index: 0, currentChar: 't', eof: false };
-    let mut parser = Parser { input: lex, k: 1, index: 0, lookahead: ~[] };
+    let mut lex = Lexer { input: ~"foo; bar; baz a b c | faz;", index: 0, currentChar: 't', eof: false };
+    let mut parser = Parser { input: lex, k: 3, index: 0, lookahead: ~[] };
     parser.lookahead.grow(parser.k, &Token {text: ~" ", ttype: COMMAND});
     let mut k_count = 1;
     while (k_count <= parser.k) {
