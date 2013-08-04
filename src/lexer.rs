@@ -47,7 +47,7 @@ impl Lexer {
 
     pub fn command(&mut self) -> Token {
         let start = self.index;
-        while (char::is_alphanumeric(self.currentChar) && !self.eof) {
+        while ((char::is_alphanumeric(self.currentChar) || char::is_whitespace(self.currentChar)) && !self.eof) {
             self.consume();
         }
         Token {text: self.input.slice(start, self.index).to_owned(), ttype: COMMAND}
