@@ -15,14 +15,14 @@ impl Parser {
     }
 
     pub fn LT(&mut self, i: uint) -> Token {
-        let token = copy self.lookahead[(self.index + i) % self.k];
-        token
+        self.lookahead[(self.index + i) % self.k].clone()
     }
 
     pub fn LA(&mut self, i: uint) -> TokenType {
         self.LT(i).ttype
     }
 
+    #[fixed_stack_segment]
     pub fn tmatch(&mut self, ttype: TokenType) {
         let current_ttype = self.LA(0) as int;
         let ttype = ttype as int;
@@ -64,7 +64,7 @@ impl Parser {
 
 #[main]
 pub fn main() {
-    let mut lex = Lexer { input: ~"foo; bar; baz a b c | faz;", index: 0, currentChar: 't', eof: false };
+    let lex = Lexer { input: ~"foo; bar; baz a b c | faz;", index: 0, currentChar: 't', eof: false };
     let mut parser = Parser { input: lex, k: 3, index: 0, lookahead: ~[] };
     parser.lookahead.grow(parser.k, &Token {text: ~" ", ttype: COMMAND});
     let mut k_count = 1;

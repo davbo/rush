@@ -1,4 +1,3 @@
-use std::io;
 use std::to_str;
 use std::char;
 
@@ -15,9 +14,15 @@ pub struct Token {
     ttype: TokenType,
 }
 
+impl Clone for Token {
+    fn clone(&self) -> Token {
+        Token { text: self.text.clone(), ttype: self.ttype}
+    }
+}
+
 impl to_str::ToStr for Token {
     fn to_str(&self) -> ~str {
-        copy self.text
+        self.text.clone()
     }
 }
 
